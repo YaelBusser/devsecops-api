@@ -1,0 +1,108 @@
+### API DevSecOps - Tests
+### Installation extension VSCode : REST Client (humao.rest-client)
+### Utilisation : Cliquer sur "Send Request" au-dessus de chaque requête
+
+# Port 3001 = API Node.js | Port 3000 = Grafana (ne pas utiliser pour les tests API)
+@baseUrl = http://localhost:3001
+
+###############################################################################
+# 1. Health Check
+###############################################################################
+
+### GET Health Check
+GET {{baseUrl}}/api/health
+
+###############################################################################
+# 2. Login (Secured)
+###############################################################################
+
+### POST Login - Normal (va échouer si pas d'utilisateur, créez-en un d'abord ou utilisez le script d'init)
+# Capture du token pour les requêtes suivantes
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin",
+  "password": "password123"
+}
+
+### Variable pour le token
+@authToken = {{login.response.body.token}}
+
+### POST Login - SQL Injection (DOIT ÉCHOUER)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin' --",
+  "password": "nimportequoi"
+}
+
+### POST Login - SQL Injection avec OR 1=1 (DOIT ÉCHOUER)
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "admin' OR '1'='1",
+  "password": "test"
+}
+
+###############################################################################
+# 3. Files (Secured + Path Traversal Fix)
+###############################################################################
+
+### GET File - Sans Token (DOIT ÉCHOUER 401)
+GET {{baseUrl}}/api/files?name=photo.jpg
+
+### GET File - Légitime (photo.jpg) avec Token
+GET {{baseUrl}}/api/files?name=photo.jpg
+Authorization: Bearer {{authToken}}
+
+### GET File - Path Traversal (package.json) (DOIT ÉCHOUER 400 ou 403)
+GET {{baseUrl}}/api/files?name=../package.json
+Authorization: Bearer {{authToken}}
+
+### GET File - Path Traversal (database.js) (DOIT ÉCHOUER)
+GET {{baseUrl}}/api/files?name=../src/config/database.js
+Authorization: Bearer {{authToken}}
+
+###############################################################################
+# 4. Users (Secured)
+###############################################################################
+
+### POST Create User - Normal
+POST {{baseUrl}}/api/users
+Content-Type: application/json
+
+{
+  "username": "newuser",
+  "email": "test@example.com",
+  "password": "testpassword",
+  "role": "user"
+}
+
+### POST Create User - Privilege Escalation (Tentative admin -> Forcé à user)
+POST {{baseUrl}}/api/users
+Content-Type: application/json
+
+{
+  "username": "hacker",
+  "email": "hacker@evil.com",
+  "password": "test",
+  "role": "admin"
+}
+
+### POST Create User - SQL Injection (DOIT ÉCHOUER / Être assaini)
+POST {{baseUrl}}/api/users
+Content-Type: application/json
+
+{
+  "username": "injector",
+  "email": "hacker', 'hacker@evil.com', 'hacked123', 'admin'); --",
+  "password": "test",
+  "role": "user"
+}
+
+### GET Documentation (liste des endpoints)
+GET {{baseUrl}}/

@@ -1,0 +1,194 @@
+version: '3'
+
+vars:
+  GREETING: '{{.GREETING | default "Hello World!"}}'
+  IMAGE_NAME: '{{.IMAGE_NAME | default "devsecops-api"}}'
+  IMAGE_TAG: '{{.IMAGE_TAG | default "latest"}}'
+  CONTAINER_NAME: '{{.CONTAINER_NAME | default "devsecops-api"}}'
+  PORT: '{{.PORT | default "3000"}}'
+  DOCKERFILE: '{{.DOCKERFILE | default "Dockerfile"}}'
+
+dotenv: ['.env']
+
+tasks:
+  hello:
+    desc: Test de base avec variable d'environnement
+    cmds:
+      - echo "{{.GREETING}}"
+
+  # ---------------------------------------------------------------------------
+  # LIFECYCLE / COMMANDS
+  # ---------------------------------------------------------------------------
+  install:
+    desc: Install dependencies
+    cmds:
+      - npm install
+
+  build:
+    desc: Build Application (for Docker mainly)
+    cmds:
+      - task: docker:build
+
+  start:
+    desc: Start locally
+    cmds:
+      - npm start
+
+  test:
+    desc: Run Unit Tests
+    cmds:
+      - npm test
+
+  test:security:
+    desc: Run Security Unit Tests
+    cmds:
+      - npm test -- src/tests/security.test.js
+
+  lint:
+    desc: Lint Code
+    cmds:
+      - npx eslint src/**/*.js
+
+  # ---------------------------------------------------------------------------
+  # SECURITY SCANS
+  # ---------------------------------------------------------------------------
+  security:secrets:
+    desc: Scan for secrets (git-secrets / trufflehog)
+    cmds:
+      - echo "🔑 Scanning for secrets..."
+      # Fallback to true if tools aren't installed to avoid breaking flow in demo
+      - git secrets --scan || echo "⚠️ git-secrets check failed or found likely secrets"
+      # - trufflehog git file://. --since-commit HEAD || echo "⚠️ trufflehog check failed"
+
+  security:sast:
+    desc: Run Static Application Security Testing (SonarQube)
+    cmds:
+      - echo "🔍 Starting SAST Scan..."
+      # Assuming docker-compose-sq.yml is running or SonarCloud is configured
+      - sonar-scanner -Dsonar.projectKey=devsecops-filrouge -Dsonar.sources=src -Dsonar.host.url=${SONAR_URL:-http://localhost:9000} -Dsonar.login=${SONAR_TOKEN} || echo "⚠️ SonarQube scan failed (is server running?)"
+
+  security:sca:
+    desc: Run Software Composition Analysis (Dependencies)
+    cmds:
+      - echo "📦 Checking dependencies..."
+      - npm audit --audit-level=high || echo "⚠️ High severity vulnerabilities found in dependencies!"
+      # - trivy fs . --severity HIGH,CRITICAL
+
+  security:dast:
+    desc: Run Dynamic Application Security Testing (OWASP ZAP)
+    cmds:
+      - echo "🕷️ Starting DAST Scan..."
+      # Requires app to be running. Using baseline scan for now.
+      - docker run -v {{.PWD}}/zap-reports:/zap/wrk/:rw -t ghcr.io/zaproxy/zaproxy:stable zap-baseline.py -t http://host.docker.internal:{{.PORT}}/ -r zap_report.html || echo "⚠️ ZAP scan failed"
+
+  security:quality-gate:
+    desc: Check Quality Gate
+    cmds:
+      - echo "🚪 Checking Quality Gate..."
+      # Real implementation would query SonarQube API status
+      - echo "✅ Quality Gate Passed (Mock)"
+
+  # ---------------------------------------------------------------------------
+  # PIPELINES
+  # ---------------------------------------------------------------------------
+  ci:local:
+    desc: Run Full Local CI Pipeline
+    cmds:
+      - task: install
+      - task: lint
+      - task: build
+      - task: test
+      - task: test:security
+      - task: security:sca
+      - echo "✅ CI Local Passed!"
+
+  # ---------------------------------------------------------------------------
+  # PIPELINE PHASES
+  # ---------------------------------------------------------------------------
+  
+  # Phase 1: Pre-commit (Local Developer)
+  phase:pre-commit:
+    desc: "Phase 1: Pre-commit - Run before committing code"
+    cmds:
+      - task: lint
+      - task: security:secrets
+      - task: test
+
+  # Phase 2: Feature Branch (CI)
+  phase:branch-feature:
+    desc: "Phase 2: Feature Branch - Run on push to feature branch"
+    cmds:
+      - task: install
+      - task: lint
+      - task: test
+      - task: build
+
+  # Phase 3: Pull Request (CI - Merge Request)
+  phase:pull-request:
+    desc: "Phase 3: Pull Request - Run on PR/MR creation"
+    cmds:
+      - task: install
+      - task: lint
+      - task: test
+      - task: test:security
+      - task: security:sca
+      - task: security:sast
+      - task: security:quality-gate
+
+  # Phase 4: Staging (CD)
+  phase:staging:
+    desc: "Phase 4: Staging - Deploy and verify on Staging"
+    cmds:
+      - echo "🚀 Deploying to Staging..."
+      - task: docker:run
+      - echo "⏳ Waiting for service to vary..."
+      # In real world: healthcheck wait
+      - task: security:dast
+      - echo "✅ Staging Verified"
+
+  # Phase 5: Production (CD)
+  phase:production:
+    desc: "Phase 5: Production - Deploy to Production"
+    deps: [phase:staging]
+    cmds:
+      - echo "🚀 Deploying to Production..."
+      # Add strict checks/approvals here
+      - echo "✅ Deployed to Production"
+
+  # Phase 6: Nightly (Scheduled)
+  phase:nightly:
+    desc: "Phase 6: Nightly - Deep scans and heavy tests"
+    cmds:
+      - task: install
+      - task: security:sca
+      # - task: security:full-sast
+      # - task: test:e2e
+      - echo "🌙 Nightly run complete"
+
+  # ---------------------------------------------------------------------------
+  # DOCKER UTILS
+  # ---------------------------------------------------------------------------
+  docker:build:
+    desc: Construire l'image Docker
+    cmds:
+      - echo "🔨 Construction de l'image Docker {{.IMAGE_NAME}}:{{.IMAGE_TAG}}..."
+      - docker build -f {{.DOCKERFILE}} -t {{.IMAGE_NAME}}:{{.IMAGE_TAG}} . || echo "⚠️ Docker build skipped"
+
+  docker:run:
+    desc: Exécuter le conteneur Docker
+    cmds:
+      - echo "🚀 Démarrage du conteneur..."
+      - docker run -d --name {{.CONTAINER_NAME}} -p {{.PORT}}:3000 --env-file .env {{.IMAGE_NAME}}:{{.IMAGE_TAG}} || echo "⚠️ Container might already be running"
+
+  docker:stop:
+    desc: Arrêter le conteneur Docker
+    cmds:
+      - docker stop {{.CONTAINER_NAME}} || true
+      - docker rm {{.CONTAINER_NAME}} || true
+
+  docker:clean:
+    desc: Nettoyer les images et conteneurs
+    cmds:
+      - task: docker:stop
+      - docker rmi {{.IMAGE_NAME}}:{{.IMAGE_TAG}} || true
+

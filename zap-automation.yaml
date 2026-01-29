@@ -1,0 +1,54 @@
+env:
+  contexts:
+    - name: "DevSecOps API"
+      urls:
+        - "http://host.docker.internal:3000"
+      includePaths:
+        - "http://host.docker.internal:3000/api/.*"
+  parameters:
+    failOnError: true
+    failOnWarning: false
+    progressToStdout: true
+jobs:
+  - type: openapi
+    parameters:
+      apiUrl: "http://host.docker.internal:3000/openapi.json"
+      targetUrl: "http://host.docker.internal:3000"
+    name: "Import OpenAPI definition"
+  - type: passiveScan-config
+    parameters:
+      maxAlertsPerRule: 10
+      scanOnlyInScope: true
+    name: "Configure passive scanning"
+  - type: activeScan
+    parameters:
+      context: "DevSecOps API"
+    name: "Active Scan with context"
+  - type: passiveScan-wait
+    parameters:
+      maxDuration: 300
+    name: "Wait for passive scanning to complete"
+  - type: outputSummary
+    parameters:
+      rules: []
+    name: "Output summary"
+  - type: report
+    parameters:
+      reportDescription: ''
+      reportDir: /zap/wrk/
+      reportFile: api-scan-report.html
+      reportTitle: ZAP Scanning Report
+      template: traditional-html
+    name: "Generate HTML report"
+  - type: report
+    parameters:
+    template: "traditional-json"
+    reportDir: "/zap/wrk"
+    reportFile: "zap-automation-report.json"
+    name: "Generate JSON Report"
+  - type: report
+    parameters:
+      template: "traditional-md"
+      reportDir: "/zap/wrk"
+      reportFile: "zap-automation-report.md"
+    name: "Generate Markdown Report"

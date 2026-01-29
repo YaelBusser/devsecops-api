@@ -1,0 +1,284 @@
+{
+  "openapi": "3.0.0",
+  "info": {
+    "title": "Demo DevSecOps API - Jour 1",
+    "version": "1.0.0",
+    "description": "API volontairement vulnérable pour l'apprentissage DevSecOps. ⚠️ NE JAMAIS déployer en production !"
+  },
+  "servers": [
+    {
+      "url": "http://host.docker.internal:3000",
+      "description": "Local server (Docker)"
+    },
+    {
+      "url": "http://localhost:3000",
+      "description": "Local server"
+    }
+  ],
+  "paths": {
+    "/": {
+      "get": {
+        "summary": "Documentation - Liste des endpoints",
+        "tags": ["Documentation"],
+        "responses": {
+          "200": {
+            "description": "Liste des endpoints disponibles"
+          }
+        }
+      }
+    },
+    "/api/health": {
+      "get": {
+        "summary": "Health Check",
+        "tags": ["Health"],
+        "responses": {
+          "200": {
+            "description": "API is healthy"
+          }
+        }
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "summary": "Login endpoint (⚠️ Vulnérable à SQL Injection)",
+        "tags": ["Authentication"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["username", "password"],
+                "properties": {
+                  "username": {
+                    "type": "string",
+                    "example": "admin"
+                  },
+                  "password": {
+                    "type": "string",
+                    "example": "admin123"
+                  }
+                }
+              },
+              "examples": {
+                "normal": {
+                  "summary": "Login normal",
+                  "value": {
+                    "username": "admin",
+                    "password": "admin123"
+                  }
+                },
+                "sqli_comment": {
+                  "summary": "SQL Injection - Commentaire",
+                  "value": {
+                    "username": "admin' --",
+                    "password": "nimportequoi"
+                  }
+                },
+                "sqli_or": {
+                  "summary": "SQL Injection - OR 1=1",
+                  "value": {
+                    "username": "admin' OR '1'='1",
+                    "password": "test"
+                  }
+                },
+                "user": {
+                  "summary": "Utilisateur normal",
+                  "value": {
+                    "username": "user",
+                    "password": "password"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Login successful",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "user": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication failed"
+          }
+        }
+      }
+    },
+    "/api/files": {
+      "get": {
+        "summary": "Download file (⚠️ Vulnérable à Path Traversal)",
+        "tags": ["Files"],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            },
+            "examples": {
+              "legitimate_toto": {
+                "summary": "Fichier légitime - toto.txt",
+                "value": "toto.txt"
+              },
+              "legitimate_pdf": {
+                "summary": "Fichier légitime - document.pdf",
+                "value": "document.pdf"
+              },
+              "traversal_package": {
+                "summary": "Path Traversal - package.json",
+                "value": "../package.json"
+              },
+              "traversal_env": {
+                "summary": "Path Traversal - .env.example",
+                "value": "../.env.example"
+              },
+              "traversal_config": {
+                "summary": "Path Traversal - database.js",
+                "value": "../src/config/database.js"
+              },
+              "traversal_secrets": {
+                "summary": "Path Traversal - SECRETS_EXAMPLES.md",
+                "value": "../SECRETS_EXAMPLES.md"
+              }
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File content",
+            "content": {
+              "text/plain": {},
+              "application/json": {},
+              "application/pdf": {}
+            }
+          },
+          "404": {
+            "description": "File not found"
+          }
+        }
+      }
+    },
+    "/api/users": {
+      "post": {
+        "summary": "Create user (⚠️ CHALLENGE - 7 vulnérabilités)",
+        "tags": ["Users"],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["email", "password"],
+                "properties": {
+                  "email": {
+                    "type": "string",
+                    "format": "email",
+                    "example": "test@example.com"
+                  },
+                  "password": {
+                    "type": "string",
+                    "example": "testpassword"
+                  },
+                  "role": {
+                    "type": "string",
+                    "enum": ["user", "admin"],
+                    "example": "user"
+                  }
+                }
+              },
+              "examples": {
+                "normal": {
+                  "summary": "Utilisateur normal",
+                  "value": {
+                    "email": "test@example.com",
+                    "password": "testpassword",
+                    "role": "user"
+                  }
+                },
+                "privilege_escalation": {
+                  "summary": "Privilege Escalation - Se donner le rôle admin",
+                  "value": {
+                    "email": "hacker@evil.com",
+                    "password": "test",
+                    "role": "admin"
+                  }
+                },
+                "invalid_email": {
+                  "summary": "Email invalide (pas de validation)",
+                  "value": {
+                    "email": "pas-un-email",
+                    "password": "x",
+                    "role": "superadmin"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "User created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "message": {
+                      "type": "string"
+                    },
+                    "userId": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request"
+          },
+          "500": {
+            "description": "Server error"
+          }
+        }
+      }
+    }
+  },
+  "tags": [
+    {
+      "name": "Documentation",
+      "description": "Documentation de l'API"
+    },
+    {
+      "name": "Health",
+      "description": "Endpoints de santé"
+    },
+    {
+      "name": "Authentication",
+      "description": "Endpoints d'authentification (⚠️ Vulnérables)"
+    },
+    {
+      "name": "Files",
+      "description": "Endpoints de gestion de fichiers (⚠️ Vulnérables)"
+    },
+    {
+      "name": "Users",
+      "description": "Endpoints de gestion des utilisateurs (⚠️ Vulnérables)"
+    }
+  ]
+}
